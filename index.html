@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>周边录入工具箱</title>
+  <title>周边批量录入工具</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: sans-serif; background:#f5f5f5; color:#333; padding:20px; }
@@ -35,12 +35,23 @@
     <h1>📦 周边批量录入工具</h1>
     <div class="flex">
       <div class="card" style="flex:2;">
-        <h2>录入新周边（一行一个）</h2>
+        <h2>设置起始 ID</h2>
         <div class="form-row">
-          <label>主图路径</label>
-          <input type="text" id="mainImage" placeholder="images/pic1.jpg" required>
-          <label style="width:auto;">详情图(逗号分隔)</label>
-          <textarea id="images" placeholder="images/pic1_1.jpg, images/pic1_2.jpg"></textarea>
+          <label>起始 ID</label>
+          <input type="number" id="startId" value="1" min="1" style="width:100px;">
+          <span style="color:#666; margin-left:10px;">（当前条目 ID = 起始 ID + 已添加数量）</span>
+        </div>
+        <hr>
+        <h2>录入新周边</h2>
+        <div class="form-row">
+          <label>主图 ID</label>
+          <input type="text" id="mainImageId" readonly required>
+          <span style="font-size:13px; color:#888;">自动生成，不可改（主图 = ID.jpg）</span>
+        </div>
+        <div class="form-row">
+          <label>详情图</label>
+          <textarea id="imagesRaw" placeholder="如: 1a,1b  (用英文逗号分隔)"></textarea>
+          <span style="font-size:13px; color:#888;">输入简短标识，自动补全为完整链接</span>
         </div>
         <div class="form-row">
           <label>标题</label>
@@ -93,192 +104,236 @@
         <textarea id="jsonOutput" readonly placeholder="点击生成后此处显示要追加的 JSON 数组..."></textarea>
         <div class="info">
           💡 步骤：<br>
-          1. 逐个填写信息，标签直接点选。<br>
-          2. 每填完一个点“添加当前周边”。<br>
-          3. 全部添加后生成 JSON，复制。<br>
-          4. 打开主站 data.json，将复制的数组内容追加到原数组末尾（注意在最后一个 ] 前加逗号）。
+          1. 设置起始 ID（如1）。<br>
+          2. 逐个填写信息，标签直接点选。<br>
+          3. 每填完一个点“添加当前周边”。<br>
+          4. 全部添加后生成 JSON，复制。<br>
+          5. 打开主站 data.json，将复制的数组内容追加到原数组末尾。
         </div>
       </div>
     </div>
   </div>
 
-<script>
-  // ========== 全局变量 ==========
-  let newItems = [];
-  let selectedForms = [];
-  let selectedChars = [];
-  let formTags = [];
-  let charTags = [];
+  <script>
+    const IMAGE_BASE_URL = 'https://cdn.jsdelivr.net/gh/mohanbai935-cmd/daolove-goods@main/images/';
 
-  // 加载标签配置
-  fetch('tag-config.json')
-    .then(res => res.json())
-    .then(config => {
-      formTags = config.forms || [];
-      charTags = config.characters || [];
-      initTags();
-    })
-    .catch(err => {
-      console.error('加载标签配置失败，使用默认空标签', err);
-      initTags(); // 即使失败也初始化（没有标签可选）
-    });
+    let newItems = [];
+    let selectedForms = [];
+    let selectedChars = [];
+    let formTags = [];
+    let charTags = [];
 
-  function initTags() {
-    renderTagPicker('form', formTags);
-    renderTagPicker('character', charTags);
-  }
+    // 加载标签配置
+    fetch('tag-config.json')
+      .then(res => res.json())
+      .then(config => {
+        formTags = config.forms || [];
+        charTags = config.characters || [];
+        initTags();
+      })
+      .catch(err => {
+        console.error('加载标签配置失败', err);
+        initTags();
+      });
 
-  function renderTagPicker(type, tags) {
-    const containerId = type === 'form' ? 'formPicker' : 'charPicker';
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.innerHTML = '';
-    tags.forEach(tag => {
-      const el = document.createElement('span');
-      el.className = 'tag-option';
-      el.textContent = tag;
-      el.onclick = () => toggleTag(type, tag, el);
-      container.appendChild(el);
-    });
-    // 恢复选中状态
-    const selected = type === 'form' ? selectedForms : selectedChars;
-    container.querySelectorAll('.tag-option').forEach(opt => {
-      if (selected.includes(opt.textContent)) opt.classList.add('selected');
-    });
-  }
-
-  window.filterTags = function(type) {
-    const searchId = type === 'form' ? 'formSearch' : 'charSearch';
-    const searchText = document.getElementById(searchId).value.toLowerCase();
-    const allTags = type === 'form' ? formTags : charTags;
-    const filtered = allTags.filter(t => t.toLowerCase().includes(searchText));
-    renderTagPicker(type, filtered);
-  };
-
-  function toggleTag(type, tag, element) {
-    const selected = type === 'form' ? selectedForms : selectedChars;
-    const idx = selected.indexOf(tag);
-    if (idx >= 0) {
-      selected.splice(idx, 1);
-      element.classList.remove('selected');
-    } else {
-      selected.push(tag);
-      element.classList.add('selected');
-    }
-  }
-
-  // === 以下与之前相同的表单处理、添加、导出等代码 ===
-  function getFormData() {
-    const mainImage = document.getElementById('mainImage').value.trim();
-    const title = document.getElementById('title').value.trim();
-    const year = parseInt(document.getElementById('year').value);
-    const site = document.getElementById('site').value.trim();
-    const time = document.getElementById('time').value;
-    const desc = document.getElementById('desc').value.trim();
-    const imagesRaw = document.getElementById('images').value.trim();
-    const urlsRaw = document.getElementById('urls').value.trim();
-
-    if (!mainImage || !title || !year || !time) {
-      alert('请填写主图、标题、年份、时间');
-      return null;
+    function initTags() {
+      renderTagPicker('form', formTags);
+      renderTagPicker('character', charTags);
+      updateMainImageId(); // 刷新主图ID显示
     }
 
-    const images = imagesRaw ? imagesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const urls = [];
-    if (urlsRaw) {
-      const lines = urlsRaw.split('\n');
-      lines.forEach(line => {
-        const [text, link] = line.split(',').map(s => s.trim());
-        if (text && link) urls.push({ text, link });
+    function getNextId() {
+      const startId = parseInt(document.getElementById('startId').value) || 1;
+      return startId + newItems.length;
+    }
+
+    function updateMainImageId() {
+      document.getElementById('mainImageId').value = getNextId();
+    }
+
+    // 渲染标签选择器
+    function renderTagPicker(type, tags) {
+      const containerId = type === 'form' ? 'formPicker' : 'charPicker';
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = '';
+      tags.forEach(tag => {
+        const el = document.createElement('span');
+        el.className = 'tag-option';
+        el.textContent = tag;
+        el.onclick = () => toggleTag(type, tag, el);
+        container.appendChild(el);
+      });
+      const selected = type === 'form' ? selectedForms : selectedChars;
+      container.querySelectorAll('.tag-option').forEach(opt => {
+        if (selected.includes(opt.textContent)) opt.classList.add('selected');
       });
     }
 
-    return {
-      id: Date.now(),
-      title,
-      desc: desc || '',
-      year,
-      site: site || '未知',
-      form: [...selectedForms],
-      characters: [...selectedChars],
-      mainImage,
-      images: images.length ? images : [mainImage],
-      time,
-      urls: urls.length > 0 ? urls : [{ text: '查看', link: '#' }]
+    window.filterTags = function(type) {
+      const searchId = type === 'form' ? 'formSearch' : 'charSearch';
+      const searchText = document.getElementById(searchId).value.toLowerCase();
+      const allTags = type === 'form' ? formTags : charTags;
+      const filtered = allTags.filter(t => t.toLowerCase().includes(searchText));
+      renderTagPicker(type, filtered);
     };
-  }
 
-  function addCurrentItem() {
-    const item = getFormData();
-    if (!item) return;
-    newItems.push(item);
-    renderNewList();
-    clearForm();
-    document.getElementById('addMsg').textContent = '已添加！';
-    setTimeout(() => document.getElementById('addMsg').textContent = '', 1500);
-  }
-
-  function clearForm() {
-    document.getElementById('mainImage').value = '';
-    document.getElementById('images').value = '';
-    document.getElementById('title').value = '';
-    document.getElementById('desc').value = '';
-    document.getElementById('year').value = '';
-    document.getElementById('site').value = '';
-    document.getElementById('time').value = '';
-    document.getElementById('urls').value = '';
-    selectedForms = [];
-    selectedChars = [];
-    // 重新渲染标签
-    renderTagPicker('form', formTags);
-    renderTagPicker('character', charTags);
-  }
-
-  function renderNewList() {
-    const container = document.getElementById('newList');
-    container.innerHTML = '';
-    newItems.forEach((item, idx) => {
-      const div = document.createElement('div');
-      div.className = 'list-item';
-      div.innerHTML = `
-        <div class="flex-row">
-          <img src="${item.mainImage}" class="preview-img" onerror="this.style.background='#ddd'">
-          <span><b>${item.title}</b> (${item.year})</span>
-        </div>
-        <button class="btn danger" onclick="removeNewItem(${idx})">删除</button>
-      `;
-      container.appendChild(div);
-    });
-    document.getElementById('newCount').textContent = newItems.length;
-  }
-
-  function removeNewItem(idx) {
-    newItems.splice(idx, 1);
-    renderNewList();
-  }
-
-  function generateAppendJSON() {
-    const output = document.getElementById('jsonOutput');
-    if (newItems.length === 0) {
-      output.value = '// 没有新数据';
-      return;
+    function toggleTag(type, tag, element) {
+      const selected = type === 'form' ? selectedForms : selectedChars;
+      const idx = selected.indexOf(tag);
+      if (idx >= 0) {
+        selected.splice(idx, 1);
+        element.classList.remove('selected');
+      } else {
+        selected.push(tag);
+        element.classList.add('selected');
+      }
     }
-    const jsonStr = JSON.stringify(newItems, null, 2);
-    output.value = jsonStr;
-  }
 
-  function copyAppendJSON() {
-    const output = document.getElementById('jsonOutput');
-    if (!output.value || output.value.startsWith('//')) {
-      alert('请先生成 JSON');
-      return;
+    // 将简短标识转换为完整图片路径
+    function buildFullImageUrl(shortName) {
+      if (!shortName) return '';
+      const trimmed = shortName.trim();
+      // 如果已经是完整 http 链接，直接返回
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      // 纯数字 -> 加 .jpg
+      if (/^\d+$/.test(trimmed)) return IMAGE_BASE_URL + trimmed + '.jpg';
+      // 否则，直接拼接
+      return IMAGE_BASE_URL + trimmed + (trimmed.includes('.') ? '' : '.jpg');  // 如果没有扩展名，默认加 .jpg
     }
-    navigator.clipboard.writeText(output.value).then(() => {
-      alert('已复制到剪贴板！');
-    }).catch(() => {
-      prompt('请手动复制：', output.value);
+
+    function getFormData() {
+      const id = getNextId();
+      const mainImageShort = document.getElementById('mainImageId').value.trim();
+      const imagesRaw = document.getElementById('imagesRaw').value.trim();
+      const title = document.getElementById('title').value.trim();
+      const desc = document.getElementById('desc').value.trim();
+      const year = parseInt(document.getElementById('year').value);
+      const site = document.getElementById('site').value.trim();
+      const time = document.getElementById('time').value;
+      const urlsRaw = document.getElementById('urls').value.trim();
+
+      if (!mainImageShort || !title || !year || !time) {
+        alert('请填写主图、标题、年份、时间');
+        return null;
+      }
+
+      // 主图完整路径
+      const mainImage = buildFullImageUrl(mainImageShort);
+
+      // 详情图列表
+      let images = [];
+      if (imagesRaw) {
+        images = imagesRaw.split(',').map(s => buildFullImageUrl(s.trim())).filter(Boolean);
+      }
+      // 如果没有输入详情图，默认用主图
+      if (images.length === 0) images = [mainImage];
+
+      // 链接
+      const urls = [];
+      if (urlsRaw) {
+        const lines = urlsRaw.split('\n');
+        lines.forEach(line => {
+          const [text, link] = line.split(',').map(s => s.trim());
+          if (text && link) urls.push({ text, link });
+        });
+      }
+
+      return {
+        id: id,
+        title,
+        desc: desc || '',
+        year,
+        site: site || '未知',
+        form: [...selectedForms],
+        characters: [...selectedChars],
+        mainImage,
+        images,
+        time,
+        urls: urls.length > 0 ? urls : [{ text: '查看', link: '#' }]
+      };
+    }
+
+    function addCurrentItem() {
+      const item = getFormData();
+      if (!item) return;
+      newItems.push(item);
+      renderNewList();
+      clearForm();
+      updateMainImageId(); // 更新下一个 id
+      document.getElementById('addMsg').textContent = '已添加！';
+      setTimeout(() => document.getElementById('addMsg').textContent = '', 1500);
+    }
+
+    function clearForm() {
+      document.getElementById('imagesRaw').value = '';
+      document.getElementById('title').value = '';
+      document.getElementById('desc').value = '';
+      document.getElementById('year').value = '';
+      document.getElementById('site').value = '';
+      document.getElementById('time').value = '';
+      document.getElementById('urls').value = '';
+      selectedForms = [];
+      selectedChars = [];
+      renderTagPicker('form', formTags);
+      renderTagPicker('character', charTags);
+      updateMainImageId(); // 主图ID自动更新为下一个
+    }
+
+    function renderNewList() {
+      const container = document.getElementById('newList');
+      container.innerHTML = '';
+      newItems.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.innerHTML = `
+          <div class="flex-row">
+            <img src="${item.mainImage}" class="preview-img" onerror="this.style.background='#ddd'">
+            <span><b>#${item.id} ${item.title}</b> (${item.year})</span>
+          </div>
+          <button class="btn danger" onclick="removeNewItem(${idx})">删除</button>
+        `;
+        container.appendChild(div);
+      });
+      document.getElementById('newCount').textContent = newItems.length;
+    }
+
+    function removeNewItem(idx) {
+      newItems.splice(idx, 1);
+      renderNewList();
+      updateMainImageId(); // 删除后更新主图预览 id
+    }
+
+    function generateAppendJSON() {
+      const output = document.getElementById('jsonOutput');
+      if (newItems.length === 0) {
+        output.value = '// 没有新数据';
+        return;
+      }
+      const jsonStr = JSON.stringify(newItems, null, 2);
+      output.value = jsonStr;
+    }
+
+    function copyAppendJSON() {
+      const output = document.getElementById('jsonOutput');
+      if (!output.value || output.value.startsWith('//')) {
+        alert('请先生成 JSON');
+        return;
+      }
+      navigator.clipboard.writeText(output.value).then(() => {
+        alert('已复制到剪贴板！');
+      }).catch(() => {
+        prompt('请手动复制：', output.value);
+      });
+    }
+
+    // 监听起始 ID 变化，自动刷新主图显示
+    document.getElementById('startId').addEventListener('input', () => {
+      updateMainImageId();
     });
-  }
-</script>
+
+    // 初始渲染
+    updateMainImageId();
+  </script>
 </body>
 </html>
