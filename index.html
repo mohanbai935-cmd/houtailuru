@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>周边录入工具箱</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: sans-serif; background:#f5f5f5; color:#333; padding:20px; }
+    .container { max-width:1300px; margin:0 auto; }
+    h1, h2 { margin-bottom:15px; }
+    .flex { display:flex; gap:20px; flex-wrap:wrap; }
+    .card { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); flex:1; min-width:300px; }
+    .form-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
+    .form-row label { width:80px; font-weight:bold; }
+    .form-row input, .form-row textarea { flex:1; min-width:150px; padding:6px; border:1px solid #ddd; border-radius:4px; }
+    .form-row textarea { height:36px; resize:vertical; }
+    .tags-picker { display:flex; flex-wrap:wrap; gap:6px; margin:5px 0; }
+    .tag-option { background:#eee; padding:4px 12px; border-radius:15px; cursor:pointer; font-size:13px; user-select:none; transition:0.2s; }
+    .tag-option.selected { background:#ff8da1; color:#fff; }
+    .tag-search { width:100%; margin-bottom:5px; padding:4px; border:1px solid #ddd; border-radius:4px; }
+    .btn { background:#ff8da1; color:#fff; border:none; padding:6px 16px; border-radius:6px; cursor:pointer; font-size:14px; margin-right:5px; }
+    .btn.secondary { background:#6c757d; }
+    .btn.danger { background:#dc3545; }
+    .list-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #eee; }
+    .preview-img { width:40px; height:40px; object-fit:cover; border-radius:4px; background:#eee; }
+    #jsonOutput { width:100%; height:200px; font-family:monospace; font-size:12px; margin-top:10px; }
+    .info { font-size:13px; color:#666; margin:10px 0; }
+    hr { margin:15px 0; }
+    .flex-row { display:flex; gap:8px; align-items:center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📦 周边批量录入工具</h1>
+    <div class="flex">
+      <div class="card" style="flex:2;">
+        <h2>录入新周边（一行一个）</h2>
+        <div class="form-row">
+          <label>主图路径</label>
+          <input type="text" id="mainImage" placeholder="images/pic1.jpg" required>
+          <label style="width:auto;">详情图(逗号分隔)</label>
+          <textarea id="images" placeholder="images/pic1_1.jpg, images/pic1_2.jpg"></textarea>
+        </div>
+        <div class="form-row">
+          <label>标题</label>
+          <input type="text" id="title" required>
+          <label>描述</label>
+          <textarea id="desc"></textarea>
+        </div>
+        <div class="form-row">
+          <label>年份</label>
+          <input type="number" id="year" min="2000" max="2030" required style="flex:0 0 100px;">
+          <label>网站</label>
+          <input type="text" id="site" placeholder="官网" required style="flex:1;">
+        </div>
+        <div class="form-row">
+          <label>时间</label>
+          <input type="date" id="time" required style="flex:1;">
+        </div>
+
+        <div style="margin-bottom:15px;">
+          <label style="font-weight:bold;">周边形式（点击选择）</label>
+          <input type="text" class="tag-search" id="formSearch" placeholder="搜索标签..." oninput="filterTags('form')">
+          <div class="tags-picker" id="formPicker"></div>
+        </div>
+
+        <div style="margin-bottom:15px;">
+          <label style="font-weight:bold;">角色（点击选择）</label>
+          <input type="text" class="tag-search" id="charSearch" placeholder="搜索标签..." oninput="filterTags('character')">
+          <div class="tags-picker" id="charPicker"></div>
+        </div>
+
+        <div class="form-row">
+          <label>链接</label>
+          <textarea id="urls" placeholder="格式：描述,链接（每行一个）" style="height:50px;"></textarea>
+        </div>
+
+        <div class="flex-row" style="margin-top:10px;">
+          <button class="btn" onclick="addCurrentItem()">➕ 添加当前周边</button>
+          <button class="btn secondary" onclick="clearForm()">清空本行</button>
+          <span id="addMsg" style="color:green; margin-left:10px;"></span>
+        </div>
+        <hr>
+        <h3>已暂存的待添加周边（<span id="newCount">0</span>个）</h3>
+        <div id="newList"></div>
+      </div>
+
+      <div class="card" style="flex:1;">
+        <h2>导出</h2>
+        <button class="btn" onclick="generateAppendJSON()">📄 生成追加 JSON</button>
+        <button class="btn secondary" onclick="copyAppendJSON()">📋 复制到剪贴板</button>
+        <textarea id="jsonOutput" readonly placeholder="点击生成后此处显示要追加的 JSON 数组..."></textarea>
+        <div class="info">
+          💡 步骤：<br>
+          1. 逐个填写信息，标签直接点选。<br>
+          2. 每填完一个点“添加当前周边”。<br>
+          3. 全部添加后生成 JSON，复制。<br>
+          4. 打开主站 data.json，将复制的数组内容追加到原数组末尾（注意在最后一个 ] 前加逗号）。
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ========== 全局变量 ==========
+  let newItems = [];
+  let selectedForms = [];
+  let selectedChars = [];
+  let formTags = [];
+  let charTags = [];
+
+  // 加载标签配置
+  fetch('tag-config.json')
+    .then(res => res.json())
+    .then(config => {
+      formTags = config.forms || [];
+      charTags = config.characters || [];
+      initTags();
+    })
+    .catch(err => {
+      console.error('加载标签配置失败，使用默认空标签', err);
+      initTags(); // 即使失败也初始化（没有标签可选）
+    });
+
+  function initTags() {
+    renderTagPicker('form', formTags);
+    renderTagPicker('character', charTags);
+  }
+
+  function renderTagPicker(type, tags) {
+    const containerId = type === 'form' ? 'formPicker' : 'charPicker';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    tags.forEach(tag => {
+      const el = document.createElement('span');
+      el.className = 'tag-option';
+      el.textContent = tag;
+      el.onclick = () => toggleTag(type, tag, el);
+      container.appendChild(el);
+    });
+    // 恢复选中状态
+    const selected = type === 'form' ? selectedForms : selectedChars;
+    container.querySelectorAll('.tag-option').forEach(opt => {
+      if (selected.includes(opt.textContent)) opt.classList.add('selected');
+    });
+  }
+
+  window.filterTags = function(type) {
+    const searchId = type === 'form' ? 'formSearch' : 'charSearch';
+    const searchText = document.getElementById(searchId).value.toLowerCase();
+    const allTags = type === 'form' ? formTags : charTags;
+    const filtered = allTags.filter(t => t.toLowerCase().includes(searchText));
+    renderTagPicker(type, filtered);
+  };
+
+  function toggleTag(type, tag, element) {
+    const selected = type === 'form' ? selectedForms : selectedChars;
+    const idx = selected.indexOf(tag);
+    if (idx >= 0) {
+      selected.splice(idx, 1);
+      element.classList.remove('selected');
+    } else {
+      selected.push(tag);
+      element.classList.add('selected');
+    }
+  }
+
+  // === 以下与之前相同的表单处理、添加、导出等代码 ===
+  function getFormData() {
+    const mainImage = document.getElementById('mainImage').value.trim();
+    const title = document.getElementById('title').value.trim();
+    const year = parseInt(document.getElementById('year').value);
+    const site = document.getElementById('site').value.trim();
+    const time = document.getElementById('time').value;
+    const desc = document.getElementById('desc').value.trim();
+    const imagesRaw = document.getElementById('images').value.trim();
+    const urlsRaw = document.getElementById('urls').value.trim();
+
+    if (!mainImage || !title || !year || !time) {
+      alert('请填写主图、标题、年份、时间');
+      return null;
+    }
+
+    const images = imagesRaw ? imagesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const urls = [];
+    if (urlsRaw) {
+      const lines = urlsRaw.split('\n');
+      lines.forEach(line => {
+        const [text, link] = line.split(',').map(s => s.trim());
+        if (text && link) urls.push({ text, link });
+      });
+    }
+
+    return {
+      id: Date.now(),
+      title,
+      desc: desc || '',
+      year,
+      site: site || '未知',
+      form: [...selectedForms],
+      characters: [...selectedChars],
+      mainImage,
+      images: images.length ? images : [mainImage],
+      time,
+      urls: urls.length > 0 ? urls : [{ text: '查看', link: '#' }]
+    };
+  }
+
+  function addCurrentItem() {
+    const item = getFormData();
+    if (!item) return;
+    newItems.push(item);
+    renderNewList();
+    clearForm();
+    document.getElementById('addMsg').textContent = '已添加！';
+    setTimeout(() => document.getElementById('addMsg').textContent = '', 1500);
+  }
+
+  function clearForm() {
+    document.getElementById('mainImage').value = '';
+    document.getElementById('images').value = '';
+    document.getElementById('title').value = '';
+    document.getElementById('desc').value = '';
+    document.getElementById('year').value = '';
+    document.getElementById('site').value = '';
+    document.getElementById('time').value = '';
+    document.getElementById('urls').value = '';
+    selectedForms = [];
+    selectedChars = [];
+    // 重新渲染标签
+    renderTagPicker('form', formTags);
+    renderTagPicker('character', charTags);
+  }
+
+  function renderNewList() {
+    const container = document.getElementById('newList');
+    container.innerHTML = '';
+    newItems.forEach((item, idx) => {
+      const div = document.createElement('div');
+      div.className = 'list-item';
+      div.innerHTML = `
+        <div class="flex-row">
+          <img src="${item.mainImage}" class="preview-img" onerror="this.style.background='#ddd'">
+          <span><b>${item.title}</b> (${item.year})</span>
+        </div>
+        <button class="btn danger" onclick="removeNewItem(${idx})">删除</button>
+      `;
+      container.appendChild(div);
+    });
+    document.getElementById('newCount').textContent = newItems.length;
+  }
+
+  function removeNewItem(idx) {
+    newItems.splice(idx, 1);
+    renderNewList();
+  }
+
+  function generateAppendJSON() {
+    const output = document.getElementById('jsonOutput');
+    if (newItems.length === 0) {
+      output.value = '// 没有新数据';
+      return;
+    }
+    const jsonStr = JSON.stringify(newItems, null, 2);
+    output.value = jsonStr;
+  }
+
+  function copyAppendJSON() {
+    const output = document.getElementById('jsonOutput');
+    if (!output.value || output.value.startsWith('//')) {
+      alert('请先生成 JSON');
+      return;
+    }
+    navigator.clipboard.writeText(output.value).then(() => {
+      alert('已复制到剪贴板！');
+    }).catch(() => {
+      prompt('请手动复制：', output.value);
+    });
+  }
+</script>
+</body>
+</html>
