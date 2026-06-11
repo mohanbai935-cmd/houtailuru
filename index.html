@@ -197,9 +197,9 @@
       // 如果已经是完整 http 链接，直接返回
       if (/^https?:\/\//i.test(trimmed)) return trimmed;
       // 纯数字 -> 加 .jpg
-      if (/^\d+$/.test(trimmed)) return IMAGE_BASE_URL + trimmed + '.jpg';
+      if (/^\d+$/.test(trimmed)) return IMAGE_BASE_URL + trimmed + '.png';
       // 否则，直接拼接
-      return IMAGE_BASE_URL + trimmed + (trimmed.includes('.') ? '' : '.jpg');  // 如果没有扩展名，默认加 .jpg
+      return IMAGE_BASE_URL + trimmed + (trimmed.includes('.') ? '' : '.png');  // 如果没有扩展名，默认加 .jpg
     }
 
     function getFormData() {
